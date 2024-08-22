@@ -1,3 +1,4 @@
+import datetime
 import json
 import logging
 
@@ -76,27 +77,42 @@ def drop_removed_data():
     existing = []
 
     # Get the datasets that have been indexed
-    url = f'{settings.SOLR_DATASET}/select?fl=name%2Cid%2Ciati_cloud_indexed&indent=true&q.op=OR&q=*%3A*&rows=10000000'
+    url = f'{settings.SOLR_DATASET}/select?fl=name%2Cid%2Ciati_cloud_indexed%2Ciati_cloud_custom&indent=true&q.op=OR&q=*%3A*&rows=10000000'  # NOQA: E501
     data = requests.get(url)
     data = data.json()['response']['docs']
+    if len(data) == 0:
+        logging.info('drop_removed_data:: No data found in the dataset index, skipping drop')
+        return
 
     # Get a list of dataset names from the dataset metadata file
     with open(f'{settings.BASE_DIR}/direct_indexing/data_sources/datasets/dataset_metadata.json') as f:
         meta = json.load(f)
         for dataset in meta:
-            existing.append(dataset['name'])
+            existing.append(dataset['id'])
 
     for d in data:
-        if d['name'] not in existing:
-            dropped_list.append(d['name'])
+        if 'iati_cloud_custom' not in d and d['id'] not in existing:
+            dropped_list.append(d['id'])
 
-    # For every core with dataset data, delete the data for the dropped datasets identified with the dataset.name field
+    # For every core with dataset data, delete the data for the dropped datasets identified with the dataset.id field
     for core in ['activity', 'transaction', 'result', 'budget']:
         solr = pysolr.Solr(f'{settings.SOLR_URL}/{core}', always_commit=True)
-        for d_name in dropped_list:
-            if len(solr.search(f'dataset.name:"{d_name}"')) > 0:
-                solr.delete(q=f'dataset.name:"{d_name}"')
+        for d_id in dropped_list:
+            if len(solr.search(f'dataset.id:"{d_id}"')) > 0:
+                solr.delete(q=f'dataset.id:"{d_id}"')
     solr = pysolr.Solr(settings.SOLR_DATASET, always_commit=True)
-    for d_name in dropped_list:
-        if len(solr.search(f'name:"{d_name}"')) > 0:
-            solr.delete(q='name:{d_name}')
+    for d_id in dropped_list:
+        if len(solr.search(f'id:"{d_id}"')) > 0:
+            # solr.delete(q=f'id:{d_id}')
+            iati_cloud_removed_date = str(datetime.datetime.now().isoformat())
+            # remove last three characters from the string and add Z
+            iati_cloud_removed_date = iati_cloud_removed_date[:-3] + 'Z'
+            update_data = {
+                'id': d_id,
+                'iati_cloud_removed_date': {'set': iati_cloud_removed_date},
+                'iati_cloud_removed_reason': {'set': 'The dataset was not available in the latest dataset download.'},
+                'iati_cloud_indexed': {'set': False},
+                'iati_cloud_should_be_indexed': {'set': False}
+            }
+            # Perform the partial update using atomic update syntax
+            solr.add([update_data])

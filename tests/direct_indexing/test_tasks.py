@@ -2,14 +2,16 @@ import pysolr
 import pytest
 
 from direct_indexing.tasks import (
-    clear_all_cores, clear_cores_with_name, fcdo_replace_partial_url, revoke_all_tasks, start, subtask_dataset_metadata,
-    subtask_publisher_metadata
+    clear_all_cores, clear_cores_with_name, fcdo_replace_partial_url, index_custom_dataset, remove_custom_dataset,
+    revoke_all_tasks, start, subtask_dataset_metadata, subtask_publisher_metadata
 )
+
+CLEAR_INDICES = 'direct_indexing.direct_indexing.clear_indices'
 
 
 def test_clear_all_cores(mocker):
     # mock direct_indexing.clear_indices
-    mock_clear = mocker.patch('direct_indexing.direct_indexing.clear_indices')
+    mock_clear = mocker.patch(CLEAR_INDICES)
     clear_all_cores()
     mock_clear.assert_called_once()
 
@@ -25,23 +27,30 @@ def test_start(mocker):
     # Mock subtask delays
     mock_subtask_publisher_metadata = mocker.patch('direct_indexing.tasks.subtask_publisher_metadata.delay')
     mock_subtask_dataset_metadata = mocker.patch('direct_indexing.tasks.subtask_dataset_metadata.delay')
+    mock_drop = mocker.patch('direct_indexing.direct_indexing.drop_removed_data')
 
     # mock datadump_success
-    mock_datadump = mocker.patch('direct_indexing.tasks.datadump_success', return_value=False)
-    with pytest.raises(ValueError):
-        start()
-    mock_subtask_publisher_metadata.assert_not_called()
+    # mock_datadump = mocker.patch('direct_indexing.tasks.datadump_success', return_value=False)
+    # with pytest.raises(ValueError):
+    #     start()
+    # mock_subtask_publisher_metadata.assert_not_called()
 
     # mock clear_indices
-    mock_datadump.return_value = True
-    mocker.patch('direct_indexing.direct_indexing.clear_indices', side_effect=pysolr.SolrError)
+    # mock_datadump.return_value = True
+    mocker.patch(CLEAR_INDICES, side_effect=pysolr.SolrError)
     assert start(False) == "Error clearing the direct indexing cores, check your Solr instance."
     mock_subtask_dataset_metadata.assert_not_called()
+    mock_drop.assert_not_called()
 
     res = start(True)
     mock_subtask_publisher_metadata.assert_called_once()
     mock_subtask_dataset_metadata.assert_called_once()
     assert res == "Both the publisher and dataset metadata indexing have begun."
+
+    # Test if drop is true, direct_indexing.drop_removed_data() is called once
+    mocker.patch(CLEAR_INDICES, side_effect=None)
+    start(False, drop=True)
+    mock_drop.assert_called_once()
 
 
 def test_subtask_publisher_metadata(mocker):
@@ -93,6 +102,34 @@ def test_revoke_all_tasks(mocker):
     mock_purge = mocker.patch('direct_indexing.tasks.app.control.purge')
     revoke_all_tasks()
     mock_purge.assert_called_once()
+
+
+def test_index_custom_dataset(mocker):
+    mock_meta = mocker.patch('direct_indexing.tasks.util.create_dataset_metadata')
+    mock_copy = mocker.patch('direct_indexing.tasks.util.copy_custom')
+    mock_subtask = mocker.patch('direct_indexing.tasks.subtask_process_dataset.delay')
+
+    mock_meta.return_value = {}
+    mock_copy.return_value = None
+    res = index_custom_dataset('url', 'title', 'name', 'org')
+    assert res == 'Success'
+    mock_subtask.assert_called_once()
+    mock_meta.assert_called_once()
+
+    mock_copy.return_value = 'Error'
+    with pytest.raises(ValueError):
+        index_custom_dataset('url', 'title', 'name', 'org')
+
+    mock_meta.return_value = 'Error'
+    with pytest.raises(ValueError):
+        index_custom_dataset('url', 'title', 'name', 'org')
+
+
+def test_remove_custom_dataset(mocker):
+    mock_remove = mocker.patch('direct_indexing.tasks.util.remove_custom')
+    mock_remove.return_value = 'Success'
+    assert remove_custom_dataset("a", "b", "c") == 'Success'
+    mock_remove.assert_called_once()
 
 
 @pytest.fixture

@@ -8,9 +8,11 @@ import pysolr
 from celery import shared_task
 from django.conf import settings
 
-from direct_indexing import direct_indexing
+from direct_indexing import direct_indexing, util
+from direct_indexing.metadata.dataset import subtask_process_dataset
 from direct_indexing.metadata.util import retrieve
-from direct_indexing.util import datadump_success
+# Currently disabled import for datadump check
+# from direct_indexing.util import datadump_success
 from iaticloud.celery import app
 
 
@@ -33,11 +35,11 @@ def clear_cores_with_name(core="publisher"):
 
 
 @shared_task
-def start(update=False):
+def start(update=False, drop=False):
     # Only if the most recent data dump was a success
-    if not datadump_success():
-        logging.info("start:: The CodeForIATI Data Dump failed, aborting the process!")
-        raise ValueError("The CodeForIATI Data Dump failed, aborting the process!")
+    # if not datadump_success():
+    #     logging.info("start:: The CodeForIATI Data Dump failed, aborting the process!")
+    #     raise ValueError("The CodeForIATI Data Dump failed, aborting the process!")
     # Clear the cores, do not use a task as this needs to finish before continuing
     try:
         if not update:
@@ -46,6 +48,8 @@ def start(update=False):
         # Stop the process and send a message to Celery Flower
         logging.info("start:: Error clearing the direct indexing cores, check your Solr instance.")
         return "Error clearing the direct indexing cores, check your Solr instance."
+    if drop:
+        direct_indexing.drop_removed_data()
     # Run the publisher metadata indexing subtask
     subtask_publisher_metadata.delay()
     # Run the dataset metadata indexing subtask
@@ -131,3 +135,29 @@ def fcdo_replace_partial_url(find_url, replace_url):
 @shared_task
 def revoke_all_tasks():
     app.control.purge()
+
+
+"""
+CUSTOM DATASETS
+"""
+
+
+@shared_task
+def index_custom_dataset(url, title, name, org):
+    logging.info("index_custom_dataset:: create the dataset metadata")
+    metadata = util.create_dataset_metadata(url, title, name, org)
+    if type(metadata) is str:
+        raise ValueError(metadata)
+
+    cp_res = util.copy_custom()
+    if type(cp_res) is str:
+        raise ValueError(cp_res)
+
+    subtask_process_dataset.delay(dataset=metadata, update=False)
+    return "Success"
+
+
+@shared_task
+def remove_custom_dataset(name, org, dataset_id):
+    logging.info("remove_custom_dataset:: remove the custom dataset")
+    return util.remove_custom(name, org, dataset_id)

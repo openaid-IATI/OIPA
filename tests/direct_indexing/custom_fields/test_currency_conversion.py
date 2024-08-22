@@ -145,8 +145,10 @@ def test_get_ym():
     sample_date = '2019-03-31T00:00:00Z'
     malformed_date = '31-03-2019'
     future_year = '9999-03-31T00:00:00Z'
-
-    future_month = f'{now.year}-{now.month + 1}-31T00:00:00Z'
+    fm = now.month + 1
+    if fm < 10:
+        fm = "0" + str(fm)
+    future_month = f'{now.year}-{fm}-31T00:00:00Z'
     empty_res = (None, None)
 
     # Test that if no date is provided, it returns None

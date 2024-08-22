@@ -350,6 +350,13 @@ def get_child_aggregations(dba, aggregation_fields):
         # {MONGO_UNWIND: "$related-activity"},
         {"$unwind": "$related-activity"},
         {"$match": {"related-activity.type": 1}},
+        {'$group': {
+            '_id': '$_id',
+            'uniqueActivity': {
+                '$first': '$$ROOT'
+            }
+        }},
+        {'$replaceRoot': {'newRoot': '$uniqueActivity'}},
         {"$group": group_object}
         # {MONGO_GROUP: group_object}
     ]))

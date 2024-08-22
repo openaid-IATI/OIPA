@@ -121,7 +121,6 @@ def iterate_third_level_children(child, data, field, target, target_field, total
             field_index = -1
         elif child in item:
             field_index = total_field
-            print(item[child])
             if not isinstance(item[child], list):
                 total_field += 1
             else:

@@ -28,7 +28,6 @@ def test__preprocess_publisher_metadata(publisher_metadata_sample):
     assert processed[2]['publisher_first_publish_date'] == TEST_VAL_1_NEW
     # Assert other fields are not changed
     assert processed[0]['other'] == TEST_VAL_4
-    print(processed)
 
 
 @pytest.fixture

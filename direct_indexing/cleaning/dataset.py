@@ -17,6 +17,9 @@ def recursive_attribute_cleaning(data):
         data = {key.replace('@', ''): item for key, item in data.items()}
         # Remove the lang xml tag
         data = {key.replace(XML_LANG_STR_STRIPPED, LANG_STR): item for key, item in data.items()}
+        data = {key: item for key, item in data.items() if '._' not in key}
+        data = {key: item for key, item in data.items() if 'http' not in key}
+
         # A list of fields that need to be appended to the dataset
         add_fields = {}
         for key, value in data.items():
@@ -55,7 +58,7 @@ def extract_key_value_fields(data, add_fields, key, value):
             add_fields = extract_single_values(add_fields, value, key, data)
     # If the fields are not yet at the lowest level of key-value pair,
     # process the underlying field.
-    elif type(value) in [OrderedDict, dict]:  # was list instead of dict
+    elif type(value) in [OrderedDict, dict, list]:  # was list instead of dict
         data[key] = recursive_attribute_cleaning(value)
     return add_fields
 

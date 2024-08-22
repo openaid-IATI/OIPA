@@ -22,13 +22,13 @@ def test_fun(mocker):
     # mock get_dataset_filepath
     mock_filepath = mocker.patch('direct_indexing.processing.dataset.get_dataset_filepath')
     # mock get_dataset_version_validity
-    mock_validity = mocker.patch('direct_indexing.processing.dataset.get_dataset_version_validity')
+    mock_validity = mocker.patch('direct_indexing.processing.dataset.get_dataset_version_validity', return_value='Valid')  # NOQA: 501
     # mock get_dataset_filetype
     mock_filetype = mocker.patch('direct_indexing.processing.dataset.get_dataset_filetype')
     # mock custom_fields.get_custom_metadata
     mock_metadata = mocker.patch('direct_indexing.processing.dataset.custom_fields.get_custom_metadata')
     # mock index_dataset
-    mock_index_ds = mocker.patch('direct_indexing.processing.dataset.index_dataset', return_value=(True, INDEX_SUCCESS))  # NOQA: 501
+    mock_index_ds = mocker.patch('direct_indexing.processing.dataset.index_dataset', return_value=(True, INDEX_SUCCESS, True))  # NOQA: 501
     # mock index
     mock_index = mocker.patch('direct_indexing.processing.dataset.index', return_value=INDEX_SUCCESS)
     # mock Solr
@@ -61,22 +61,22 @@ def test_fun(mocker):
 def test_index_dataset(mocker):
     convert_save = 'direct_indexing.processing.dataset.convert_and_save_xml_to_processed_json'
     # mock convert_and_save_xml_to_processed_json, index_to_core
-    mock_convert = mocker.patch(convert_save, return_value=False)  # NOQA: 501
+    mock_convert = mocker.patch(convert_save, return_value=(False, False, "No JSON Path found"))  # NOQA: 501
     mock_index = mocker.patch('direct_indexing.processing.dataset.index_to_core', return_value=INDEX_SUCCESS)
-    assert index_dataset(None, None, None, None, None) == (False, 'No JSON Path found')
+    assert index_dataset(None, None, None, None, None) == (False, 'No JSON Path found', False)
     mock_convert.assert_called_once()
     mock_index.assert_not_called()
 
-    mock_convert.return_value = TEST_PATH
-    assert index_dataset(None, None, None, None, None) == (True, INDEX_SUCCESS)
+    mock_convert.return_value = (TEST_PATH, True, "Successfully Indexed")
+    assert index_dataset(None, None, None, None, None) == (True, INDEX_SUCCESS, True)
     mock_index.assert_called_once()
 
-    mock_index.return_value = 'Failed to index'
-    assert index_dataset(None, None, None, None, None) == (False, 'Failed to index')
+    mock_index.return_value = 'Unable to index the processed dataset.'
+    assert index_dataset(None, None, None, None, None) == (False, 'Unable to index the processed dataset.', False)
 
     # Test that if index_dataset raises an exception with error message 'test', it returns a tuple False, 'test'
     mocker.patch(convert_save, side_effect=Exception('test'))  # NOQA: 501
-    assert index_dataset(None, None, None, None, None) == (False, 'test')
+    assert index_dataset(None, None, None, None, None) == (False, 'test', False)
 
 
 def test_convert_and_save_xml_to_processed_json(mocker, tmp_path, fixture_xml_act, fixture_xml_org):
@@ -91,17 +91,17 @@ def test_convert_and_save_xml_to_processed_json(mocker, tmp_path, fixture_xml_ac
     xml_path.write_text("<test>test</test>")
 
     # Test that if filetype activity, but iati-activities is not in the xml, we return False for data_found
-    assert not convert_and_save_xml_to_processed_json(xml_path, 'activity', None, None, None)
+    assert not convert_and_save_xml_to_processed_json(xml_path, 'activity', None, None, None)[0]
     # Test that if filetype activity, and iati-activities is in the xml but no child activity,
     # we return False for data_found
     xml_path.write_text('<iati-activities></iati-activities>')
-    assert not convert_and_save_xml_to_processed_json(xml_path, 'activity', None, None, None)
+    assert not convert_and_save_xml_to_processed_json(xml_path, 'activity', None, None, None)[0]
     # Test that if filetype organisation, but iati-organisations is not in the xml, we return False for data_found
-    assert not convert_and_save_xml_to_processed_json(xml_path, 'organisation', None, None, None)
+    assert not convert_and_save_xml_to_processed_json(xml_path, 'organisation', None, None, None)[0]
     # Test that if filetype organisation, and iati-organisations is in the xml but no child organisation,
     # we return False for data_found
     xml_path.write_text('<iati-organisations></iati-organisations>')
-    assert not convert_and_save_xml_to_processed_json(xml_path, 'organisation', None, None, None)
+    assert not convert_and_save_xml_to_processed_json(xml_path, 'organisation', None, None, None)[0]
 
     # mock the value of settings.FCDO_INSTANCE to False
     mocker.patch('direct_indexing.processing.dataset.settings.FCDO_INSTANCE', True)
@@ -135,11 +135,16 @@ def test_convert_and_save_xml_to_processed_json(mocker, tmp_path, fixture_xml_ac
 
     # Assert if json_filepath returns False, the return value is False
     mock_json_filepath.return_value = False
-    assert not convert_and_save_xml_to_processed_json(xml_path, 'organisation', None, None, None)
+    assert not convert_and_save_xml_to_processed_json(xml_path, 'organisation', None, None, None)[0]
+
+    # Assert if json.dump raises an exception, the return value is None
+    mocker.patch('json.dump', side_effect=Exception)
+    mock_json_filepath.return_value = str(tmp_path / TEST_JSON)
+    assert convert_and_save_xml_to_processed_json(xml_path, 'organisation', None, None, None) == (False, True, "Processed data could not be saved as JSON.")
 
     # Assert if ET raises a ParseError, the return value is None
     mocker.patch('xml.etree.ElementTree.parse', side_effect=ET.ParseError)
-    assert convert_and_save_xml_to_processed_json(None, None, None, None, None) is None
+    assert convert_and_save_xml_to_processed_json(None, None, None, None, None) == (None, False, "Unable to read XML file.")
 
 
 def test_json_filepath(mocker):
@@ -190,6 +195,12 @@ def test_index_subtypes(mocker, tmp_path):
     mock_index.assert_called_once()
     mock_json.assert_called_once()
     mock_open.assert_called_with(str(tmp_path / 'activity_result.json'), 'w')
+
+    # Test if json.dump raises an exception,logging.error is called once
+    mock_json.side_effect = Exception
+    mock_log = mocker.patch('direct_indexing.processing.dataset.logging.error')
+    index_subtypes(json_path, subtypes)
+    mock_log.assert_called_once()
 
 
 @pytest.fixture

@@ -496,6 +496,11 @@
   <field name="extras.verified" type="text_general_single"/>
   <field name="extras.validation_status" type="text_general_single"/>
   <field name="iati_cloud_indexed" type="boolean"/>
+  <field name="iati_cloud_indexed_datetime" type="pdate"/>
+  <field name="iati_cloud_removed_date" type="pdate"/>
+  <field name="iati_cloud_removed_reason" type="text_general_single"/>
+  <field name="iati_cloud_should_be_indexed" type="boolean"/>
+  <field name="iati_cloud_custom" type="boolean"/>
   <field name="id" type="string" multiValued="false" indexed="true" required="true" stored="true"/>
   <field name="isopen" type="boolean"/>
   <field name="license_id" type="text_general_single"/>

@@ -88,8 +88,7 @@ def test_run_dataset_metadata(mocker):
 def test_drop_removed_data(mocker, tmp_path, requests_mock, fixture_solr_response, fixture_dataset_metadata):
     # Mock settings.SOLR_DATASET to https://test.com
     mocker.patch('direct_indexing.direct_indexing.settings.SOLR_DATASET', 'https://test.com')
-    test_url = 'https://test.com/select?fl=name%2Cid%2Ciati_cloud_indexed&indent=true&q.op=OR&q=*%3A*&rows=10000000'
-    requests_mock.get(test_url, json=fixture_solr_response)
+    test_url = 'https://test.com/select?fl=name%2Cid%2Ciati_cloud_indexed%2Ciati_cloud_custom&indent=true&q.op=OR&q=*%3A*&rows=10000000'  # NOQA: E501
 
     # mock settings.BASE_DIR to be tmp_path
     mocker.patch('direct_indexing.direct_indexing.settings.BASE_DIR', tmp_path)
@@ -105,7 +104,12 @@ def test_drop_removed_data(mocker, tmp_path, requests_mock, fixture_solr_respons
     mock_solr = mocker.patch(SOLR, return_value=solr_instance_mock)
     # mock solr.search to return a list with 2 elements
     solr_instance_mock.search.return_value = [{}]
+
+    requests_mock.get(test_url, json={'response': {'docs': []}})
+    drop_removed_data()
+    assert solr_instance_mock.delete.call_count == 0
     # Run drop_removed_data
+    requests_mock.get(test_url, json=fixture_solr_response)
     drop_removed_data()
 
     # assert mock_solr was called 5 times, once for each core including datasets
@@ -114,7 +118,7 @@ def test_drop_removed_data(mocker, tmp_path, requests_mock, fixture_solr_respons
     # assert solr's search and delete function is called a total of 10 times
     # 2 times for each of the 5 cores, where 2 times represents drop1 and drop2
     assert solr_instance_mock.search.call_count == 10
-    assert solr_instance_mock.delete.call_count == 10
+    assert solr_instance_mock.delete.call_count == 8
 
 
 @pytest.fixture
@@ -123,14 +127,17 @@ def fixture_solr_response():
         'response': {
             'docs': [
                 {
+                    'id': '0001',
                     'name': 'test',
                     'iati_cloud_indexed': True,
                 },
                 {
+                    'id': '0003',
                     'name': 'drop1',
                     'iati_cloud_indexed': True,
                 },
                 {
+                    'id': '0004',
                     'name': 'drop2',
                     'iati_cloud_indexed': True,
                 }
@@ -143,11 +150,11 @@ def fixture_solr_response():
 def fixture_dataset_metadata():
     return [
         {
+            'id': '0001',
             'name': 'test',
-            'id': 'test',
         },
         {
+            'id': '0002',
             'name': 'new',
-            'id': 'new',
         }
     ]

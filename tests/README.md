@@ -6,6 +6,11 @@ We can do a simple test run with
 pytest tests
 ```
 
+We can trigger a test with verbose printing with
+```
+pytest tests -rP
+```
+
 or we can generate a coverage report with:
 ```
 pytest --cov=direct_indexing --cov-report html:./coverage_report tests

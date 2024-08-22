@@ -20,22 +20,30 @@ def test_subtask_process_dataset(mocker, fixture_dataset):
     # Test successful indexing
     res_str = 'Successfully indexed'
     fun_path = "direct_indexing.metadata.dataset.dataset_processing.fun"
-    mocker.patch(fun_path, return_value=(res_str, res_str))
+    mocker.patch(fun_path, return_value=(res_str, res_str, False))
     res = subtask_process_dataset(None, False)
     assert res == res_str
 
     # Test Dataset invalid
     res_str_dataset = 'Dataset invalid'
-    mocker.patch(fun_path, return_value=(res_str_dataset, res_str))
+    mocker.patch(fun_path, return_value=(res_str_dataset, res_str, False))
     res = subtask_process_dataset(None, False)
     assert res == res_str_dataset
 
     # Test DatasetException
     res_str_err = 'Error processing dataset'
-    mocker.patch(fun_path, return_value=(res_str_err, res_str))
-    with pytest.raises(DatasetException) as excinfo:
+    mocker.patch(fun_path, return_value=(res_str_err, res_str, False))
+    assert subtask_process_dataset(fixture_dataset, False) == "Dataset was not indexed"
+    # with pytest.raises(DatasetException) as excinfo:
+        # subtask_process_dataset(fixture_dataset, False)
+    # assert str(excinfo.value) == f'Error indexing dataset {fixture_dataset["id"]}\nDataset metadata:\n{res_str}\nDataset indexing:\n{str(res_str_err)}'  # NOQA
+
+    # Test retry
+    mocker.patch(fun_path, return_value=(res_str_err, res_str, True))
+    retry_mock = mocker.patch("direct_indexing.metadata.dataset.subtask_process_dataset.retry", side_effect=DatasetException("Test"))  # NOQA: E501
+    with pytest.raises(DatasetException):
         subtask_process_dataset(fixture_dataset, False)
-    assert str(excinfo.value) == f'Error indexing dataset {fixture_dataset["id"]}\nDataset metadata:\n{res_str}\nDataset indexing:\n{str(res_str_err)}'  # NOQA
+    retry_mock.assert_called_once()
 
 
 def test_index_datasets_and_dataset_metadata(mocker, fixture_datasets):
@@ -94,7 +102,7 @@ def test_load_codelists(mocker):
 def test__get_existing_datasets(mocker, requests_mock, fixture_solr_dataset, fixture_existing_datasets):
     mocker.patch('direct_indexing.metadata.dataset.settings.SOLR_DATASET', "https://test.com")
     requests_mock.get("https://test.com" + (
-        '/select?q=resources.hash:* AND extras.filetype:*'
+        '/select?q=*:*'
         ' AND id:*&rows=100000&wt=json&fl=resources.hash,id,extras.filetype'
     ), json=fixture_solr_dataset)
     res = _get_existing_datasets()
